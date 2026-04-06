@@ -36,15 +36,15 @@ func AskGemini(ctx context.Context, query string) (string, error) {
 	if err := FetchPageWithRetry(ctx, "https://gemini.google.com/", nil); err != nil {
 		return "", fmt.Errorf("open Gemini: %w", err)
 	}
-	needsAuth, err := geminiNeedsAuth(ctx)
-	if err != nil {
-		return "", err
-	}
-	if needsAuth {
-		return "", fmt.Errorf("Run 'pandaapi auth' first")
-	}
 	inputSelector, err := WaitForAnySelector(ctx, geminiInputSelectors(), 30*time.Second)
 	if err != nil {
+		needsAuth, authErr := geminiNeedsAuth(ctx)
+		if authErr != nil {
+			return "", fmt.Errorf("find Gemini input: %w", err)
+		}
+		if needsAuth {
+			return "", fmt.Errorf("Run 'pandaapi auth' first")
+		}
 		return "", fmt.Errorf("find Gemini input: %w", err)
 	}
 
@@ -59,6 +59,10 @@ func AskGemini(ctx context.Context, query string) (string, error) {
 }
 
 func geminiNeedsAuth(ctx context.Context) (bool, error) {
+	visible, err := AnySelectorPresent(ctx, geminiInputSelectors())
+	if err == nil && visible {
+		return false, nil
+	}
 	expression := `(function() {
 		const url = window.location.href.toLowerCase();
 		if (url.includes('accounts.google.com') || url.includes('signin')) return true;

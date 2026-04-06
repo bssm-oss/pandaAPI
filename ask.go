@@ -8,6 +8,18 @@ import (
 	"strings"
 )
 
+type askRuntimePlan struct {
+	headless      bool
+	requireCookie bool
+}
+
+func determineAskRuntime(provider string, cookieExists bool) askRuntimePlan {
+	if provider == ProviderGemini && !cookieExists {
+		return askRuntimePlan{headless: false, requireCookie: false}
+	}
+	return askRuntimePlan{headless: true, requireCookie: true}
+}
+
 func RunAsk(query string, provider string) error {
 	query = strings.TrimSpace(query)
 	if query == "" {
@@ -24,24 +36,34 @@ func RunAsk(query string, provider string) error {
 	}
 
 	cookieFile := CookieFilePath(cfg, providerConfig.Name)
-	if _, err := os.Stat(cookieFile); err != nil {
-		if os.IsNotExist(err) {
-			return errors.New("Run 'pandaapi auth' first")
+	_, statErr := os.Stat(cookieFile)
+	cookieExists := statErr == nil
+	if statErr != nil {
+		if os.IsNotExist(statErr) {
+			cookieExists = false
+		} else {
+			return fmt.Errorf("stat cookie file: %w", statErr)
 		}
-		return fmt.Errorf("stat cookie file: %w", err)
+	}
+
+	plan := determineAskRuntime(providerConfig.Name, cookieExists)
+	if plan.requireCookie && !cookieExists {
+		return errors.New("Run 'pandaapi auth' first")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), cfg.AskTimeout)
 	defer cancel()
 
-	browserCtx, browserCancel, err := NewBrowserContext(ctx, cfg.LightpandaCDP, true)
+	browserCtx, browserCancel, err := NewBrowserContext(ctx, cfg.LightpandaCDP, plan.headless)
 	if err != nil {
 		return err
 	}
 	defer browserCancel()
 
-	if err := LoadCookies(browserCtx, cookieFile); err != nil {
-		return fmt.Errorf("load cookies: %w", err)
+	if plan.requireCookie {
+		if err := LoadCookies(browserCtx, cookieFile); err != nil {
+			return fmt.Errorf("load cookies: %w", err)
+		}
 	}
 
 	var answer string

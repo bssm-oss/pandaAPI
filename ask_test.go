@@ -15,6 +15,29 @@ func TestRunAskRequiresExistingCookieFile(t *testing.T) {
 	}
 }
 
+func TestDetermineAskRuntime(t *testing.T) {
+	tests := []struct {
+		name          string
+		provider      string
+		cookieExists  bool
+		headless      bool
+		requireCookie bool
+	}{
+		{name: "chatgpt without cookie", provider: ProviderChatGPT, cookieExists: false, headless: true, requireCookie: true},
+		{name: "gemini without cookie", provider: ProviderGemini, cookieExists: false, headless: false, requireCookie: false},
+		{name: "gemini with cookie", provider: ProviderGemini, cookieExists: true, headless: true, requireCookie: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			plan := determineAskRuntime(tc.provider, tc.cookieExists)
+			if plan.headless != tc.headless || plan.requireCookie != tc.requireCookie {
+				t.Fatalf("unexpected plan: %+v", plan)
+			}
+		})
+	}
+}
+
 func TestRunAskRejectsBlankQuery(t *testing.T) {
 	err := RunAsk("   ", ProviderChatGPT)
 	if err == nil || !strings.Contains(err.Error(), "--query is required") {

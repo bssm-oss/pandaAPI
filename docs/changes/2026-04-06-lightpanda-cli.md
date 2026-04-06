@@ -17,6 +17,7 @@ Create the initial CLI with reproducible local verification, cookie persistence,
 - Added README, AGENTS guidance, and CI.
 - Added explicit GitHub installation guidance for `go install` consumers.
 - Added focused tests for cookie persistence helpers and `ask` precondition handling.
+- Added a Gemini-only signed-out fallback path for `ask` when no cookie file is present.
 
 ## Design Rationale
 
@@ -39,6 +40,7 @@ Create the initial CLI with reproducible local verification, cookie persistence,
 - `GOBIN=$PWD/.bin go install .`
 - Manual CLI smoke checks for help output and unauthenticated failure path
 - Lightpanda endpoint probe at `http://127.0.0.1:9222/json/version`
+- Signed-out Gemini request probe through local Chrome automation
 
 ## Remaining Limitations
 
@@ -47,6 +49,7 @@ Create the initial CLI with reproducible local verification, cookie persistence,
 - CI cannot complete real provider login or prompt flows.
 - The current local environment returned `connection refused` for the default Lightpanda endpoint, so authenticated `ask` verification remains blocked until Lightpanda is running.
 - After bringing Lightpanda up locally, ChatGPT still served a browser-verification page instead of the chat UI, so the current Lightpanda runtime cannot be claimed as verified for ChatGPT prompt submission.
+- Gemini loginless support is provider-specific and depends on the public signed-out Gemini web UI continuing to permit prompt submission.
 
 ## Follow-Up Tasks
 
