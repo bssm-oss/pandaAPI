@@ -20,19 +20,37 @@ func determineAskRuntime(provider string, cookieExists bool) askRuntimePlan {
 	return askRuntimePlan{headless: true, requireCookie: true}
 }
 
+func determineServerAskRuntime(_ string, _ bool) askRuntimePlan {
+	return askRuntimePlan{headless: true, requireCookie: true}
+}
+
 func RunAsk(query string, provider string) error {
+	answer, err := runAsk(query, provider, determineAskRuntime)
+	if err != nil {
+		return err
+	}
+
+	fmt.Println(answer)
+	return nil
+}
+
+func RunServerAsk(query string, provider string) (string, error) {
+	return runAsk(query, provider, determineServerAskRuntime)
+}
+
+func runAsk(query string, provider string, planner func(string, bool) askRuntimePlan) (string, error) {
 	query = strings.TrimSpace(query)
 	if query == "" {
-		return errors.New("--query is required")
+		return "", errors.New("--query is required")
 	}
 
 	providerConfig, err := GetProviderConfig(provider)
 	if err != nil {
-		return err
+		return "", err
 	}
 	cfg, err := LoadConfig()
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	cookieFile := CookieFilePath(cfg, providerConfig.Name)
@@ -42,13 +60,13 @@ func RunAsk(query string, provider string) error {
 		if os.IsNotExist(statErr) {
 			cookieExists = false
 		} else {
-			return fmt.Errorf("stat cookie file: %w", statErr)
+			return "", fmt.Errorf("stat cookie file: %w", statErr)
 		}
 	}
 
-	plan := determineAskRuntime(providerConfig.Name, cookieExists)
+	plan := planner(providerConfig.Name, cookieExists)
 	if plan.requireCookie && !cookieExists {
-		return errors.New("Run 'pandaapi auth' first")
+		return "", errors.New("Run 'pandaapi auth' first")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), cfg.AskTimeout)
@@ -56,13 +74,18 @@ func RunAsk(query string, provider string) error {
 
 	browserCtx, browserCancel, err := NewBrowserContext(ctx, cfg.LightpandaCDP, plan.headless)
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer browserCancel()
 
 	if plan.requireCookie {
 		if err := LoadCookies(browserCtx, cookieFile); err != nil {
-			return fmt.Errorf("load cookies: %w", err)
+			if providerConfig.Name == ProviderGemini {
+				return runAsk(query, provider, func(string, bool) askRuntimePlan {
+					return askRuntimePlan{headless: false, requireCookie: false}
+				})
+			}
+			return "", fmt.Errorf("load cookies: %w", err)
 		}
 	}
 
@@ -73,12 +96,21 @@ func RunAsk(query string, provider string) error {
 	case ProviderGemini:
 		answer, err = AskGemini(browserCtx, query)
 	default:
-		return fmt.Errorf("unsupported provider %q", providerConfig.Name)
+		return "", fmt.Errorf("unsupported provider %q", providerConfig.Name)
 	}
 	if err != nil {
-		return err
+		if providerConfig.Name == ProviderGemini && shouldFallbackGeminiSignedOut(err) && plan.requireCookie {
+			return runAsk(query, provider, func(string, bool) askRuntimePlan {
+				return askRuntimePlan{headless: false, requireCookie: false}
+			})
+		}
+		return "", err
 	}
 
-	fmt.Println(strings.TrimSpace(answer))
-	return nil
+	return strings.TrimSpace(answer), nil
+}
+
+func shouldFallbackGeminiSignedOut(err error) bool {
+	msg := err.Error()
+	return strings.Contains(msg, "Run 'pandaapi auth' first") || strings.Contains(msg, "submit Gemini prompt: UnknownMethod")
 }

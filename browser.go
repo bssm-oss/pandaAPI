@@ -5,15 +5,17 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/chromedp/chromedp"
 )
 
 func NewBrowserContext(ctx context.Context, cdpURL string, headless bool) (context.Context, context.CancelFunc, error) {
+	quietErrf := func(string, ...interface{}) {}
 	if headless {
 		allocatorCtx, allocatorCancel := chromedp.NewRemoteAllocator(ctx, cdpURL)
-		browserCtx, browserCancel := chromedp.NewContext(allocatorCtx)
+		browserCtx, browserCancel := chromedp.NewContext(allocatorCtx, chromedp.WithErrorf(quietErrf))
 		cancel := func() {
 			browserCancel()
 			allocatorCancel()
@@ -36,7 +38,7 @@ func NewBrowserContext(ctx context.Context, cdpURL string, headless bool) (conte
 	)
 
 	allocatorCtx, allocatorCancel := chromedp.NewExecAllocator(ctx, allocatorOptions...)
-	browserCtx, browserCancel := chromedp.NewContext(allocatorCtx)
+	browserCtx, browserCancel := chromedp.NewContext(allocatorCtx, chromedp.WithErrorf(quietErrf))
 	cancel := func() {
 		browserCancel()
 		allocatorCancel()
@@ -173,11 +175,7 @@ func EvaluateBool(ctx context.Context, expression string) (bool, error) {
 
 func SubmitPrompt(ctx context.Context, selector string, query string, submitSelectors []string) error {
 	if err := Retry(ctx, 3, 500*time.Millisecond, func(runCtx context.Context) error {
-		return chromedp.Run(runCtx,
-			chromedp.Focus(selector, chromedp.ByQuery),
-			chromedp.Click(selector, chromedp.ByQuery),
-			chromedp.SendKeys(selector, query, chromedp.ByQuery),
-		)
+		return setPromptText(runCtx, selector, query)
 	}); err != nil {
 		return err
 	}
@@ -190,5 +188,52 @@ func SubmitPrompt(ctx context.Context, selector string, query string, submitSele
 		}
 	}
 
-	return chromedp.Run(ctx, chromedp.SendKeys(selector, "\n", chromedp.ByQuery))
+	return submitPromptWithEnterKey(ctx, selector)
+}
+
+func setPromptText(ctx context.Context, selector string, query string) error {
+	selectorLiteral := strconv.Quote(selector)
+	queryLiteral := strconv.Quote(query)
+	expr := fmt.Sprintf(`(() => {
+		const el = document.querySelector(%s);
+		if (!el) return "missing";
+		const text = %s;
+		if (el.matches('textarea, input')) {
+			el.value = text;
+		} else {
+			el.textContent = text;
+		}
+		el.dispatchEvent(new Event('input', { bubbles: true }));
+		el.dispatchEvent(new Event('change', { bubbles: true }));
+		return "ok";
+	})()`, selectorLiteral, queryLiteral)
+	var result string
+	if err := chromedp.Run(ctx, chromedp.Evaluate(expr, &result)); err != nil {
+		return err
+	}
+	if result != "ok" {
+		return fmt.Errorf("set prompt text failed: %s", result)
+	}
+	return nil
+}
+
+func submitPromptWithEnterKey(ctx context.Context, selector string) error {
+	selectorLiteral := strconv.Quote(selector)
+	expr := fmt.Sprintf(`(() => {
+		const el = document.querySelector(%s);
+		if (!el) return "missing";
+		const eventInit = { bubbles: true, cancelable: true, key: 'Enter', code: 'Enter', keyCode: 13, which: 13 };
+		el.dispatchEvent(new KeyboardEvent('keydown', eventInit));
+		el.dispatchEvent(new KeyboardEvent('keypress', eventInit));
+		el.dispatchEvent(new KeyboardEvent('keyup', eventInit));
+		return "ok";
+	})()`, selectorLiteral)
+	var result string
+	if err := chromedp.Run(ctx, chromedp.Evaluate(expr, &result)); err != nil {
+		return err
+	}
+	if result != "ok" {
+		return fmt.Errorf("submit prompt with enter failed: %s", result)
+	}
+	return nil
 }

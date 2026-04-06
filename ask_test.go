@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -63,5 +64,26 @@ func TestRunAskWrapsCookieStatErrors(t *testing.T) {
 	err := RunAsk("hello", ProviderChatGPT)
 	if err == nil || !strings.Contains(err.Error(), "create cookie directory") {
 		t.Fatalf("expected config creation error, got %v", err)
+	}
+}
+
+func TestShouldFallbackGeminiSignedOut(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{name: "auth required", err: errors.New("Run 'pandaapi auth' first"), want: true},
+		{name: "unknown method", err: errors.New("submit Gemini prompt: UnknownMethod (-31998)"), want: true},
+		{name: "other error", err: errors.New("wait for Gemini answer: context deadline exceeded"), want: false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := shouldFallbackGeminiSignedOut(tc.err)
+			if got != tc.want {
+				t.Fatalf("expected %v, got %v", tc.want, got)
+			}
+		})
 	}
 }
