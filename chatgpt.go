@@ -40,16 +40,19 @@ func AskChatGPT(ctx context.Context, query string) (string, error) {
 	if err := FetchPageWithRetry(ctx, "https://chat.openai.com/", nil); err != nil {
 		return "", fmt.Errorf("open ChatGPT: %w", err)
 	}
-	needsAuth, err := chatGPTNeedsAuth(ctx)
-	if err != nil {
-		return "", err
+	unsupported, err := chatGPTBrowserUnsupported(ctx)
+	if err == nil && unsupported {
+		return "", fmt.Errorf("Lightpanda could not pass ChatGPT browser verification; try a supported browser/runtime for ChatGPT")
 	}
-	if needsAuth {
-		return "", fmt.Errorf("Run 'pandaapi auth' first")
-	}
-
 	inputSelector, err := WaitForAnySelector(ctx, chatGPTInputSelectors(), 30*time.Second)
 	if err != nil {
+		needsAuth, authErr := chatGPTNeedsAuth(ctx)
+		if authErr != nil {
+			return "", fmt.Errorf("find ChatGPT input: %w", err)
+		}
+		if needsAuth {
+			return "", fmt.Errorf("Run 'pandaapi auth' first")
+		}
 		return "", fmt.Errorf("find ChatGPT input: %w", err)
 	}
 
@@ -63,7 +66,20 @@ func AskChatGPT(ctx context.Context, query string) (string, error) {
 	return waitForChatGPTAnswer(ctx, beforeState)
 }
 
+func chatGPTBrowserUnsupported(ctx context.Context) (bool, error) {
+	expression := `(function() {
+		const title = (document.title || '').toLowerCase();
+		const body = (document.body?.innerText || '').toLowerCase();
+		return title.includes('just a moment') || body.includes('browser not supported') || body.includes('enable javascript and cookies to continue');
+	})()`
+	return EvaluateBool(ctx, expression)
+}
+
 func chatGPTNeedsAuth(ctx context.Context) (bool, error) {
+	visible, err := AnySelectorPresent(ctx, chatGPTInputSelectors())
+	if err == nil && visible {
+		return false, nil
+	}
 	expression := `(function() {
 		const url = window.location.href.toLowerCase();
 		if (url.includes('/auth') || url.includes('/login')) return true;

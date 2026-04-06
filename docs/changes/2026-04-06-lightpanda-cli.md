@@ -46,6 +46,7 @@ Create the initial CLI with reproducible local verification, cookie persistence,
 - Selectors may need updates as upstream DOM changes.
 - CI cannot complete real provider login or prompt flows.
 - The current local environment returned `connection refused` for the default Lightpanda endpoint, so authenticated `ask` verification remains blocked until Lightpanda is running.
+- After bringing Lightpanda up locally, ChatGPT still served a browser-verification page instead of the chat UI, so the current Lightpanda runtime cannot be claimed as verified for ChatGPT prompt submission.
 
 ## Follow-Up Tasks
 

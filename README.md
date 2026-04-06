@@ -105,6 +105,7 @@ Manual smoke checks should also include:
 - Login and answer extraction depend on the provider’s live web UI.
 - End-to-end automation requires external services and a reachable Lightpanda CDP instance.
 - If `http://127.0.0.1:9222` is not serving CDP endpoints, `ask` cannot be verified end to end until Lightpanda is started.
+- In local verification, ChatGPT presented a browser-verification page under Lightpanda instead of the chat UI, so ChatGPT `ask` may require a different supported browser runtime even after authentication.
 
 ## Development
 
