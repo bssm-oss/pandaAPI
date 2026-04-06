@@ -77,13 +77,37 @@ pandaapi ask --query "Hello" --provider gemini
 
 #### 방법 2: 로그인 없이 사용 시도
 
-현재 Gemini는 쿠키가 없을 때 로컬 Chrome 런타임으로 fallback해서 signed-out 웹 흐름을 시도합니다.
+현재 Gemini는 쿠키가 없거나 기존 쿠키 경로가 실패할 때 로컬 Chrome 런타임으로 fallback해서 signed-out 웹 흐름을 시도합니다.
 
 ```bash
 PANDAAPI_COOKIE_DIR=$(mktemp -d) pandaapi ask --query "Say exactly: PONG" --provider gemini
 ```
 
 `--provider`를 생략하면 기본값은 `chatgpt`입니다.
+
+## 서버 모드
+
+`pandaapi server`를 실행하면 HTTP 서버가 켜지고 JSON 요청을 받아 provider 응답을 JSON으로 돌려줍니다.
+
+```bash
+pandaapi server --addr 127.0.0.1:8080
+```
+
+헬스 체크:
+
+```bash
+curl http://127.0.0.1:8080/healthz
+```
+
+질문 요청:
+
+```bash
+curl -X POST http://127.0.0.1:8080/ask \
+  -H 'Content-Type: application/json' \
+  -d '{"query":"Hello","provider":"chatgpt"}'
+```
+
+서버 경로는 headless Lightpanda만 사용합니다. 즉, CLI에서 Gemini에 대해 쓰는 로컬 Chrome fallback은 서버 모드에서는 사용하지 않습니다.
 
 ## 명령어 요약
 
@@ -101,13 +125,22 @@ pandaapi ask --query "Hello" --provider chatgpt
 pandaapi ask --query "Summarize this page" --provider gemini
 ```
 
+### 서버 실행
+
+```bash
+pandaapi server --addr 127.0.0.1:8080
+```
+
 ## 현재 동작 방식
 
 - `auth`
   - 보이는 로컬 브라우저를 열어 수동 로그인 후 쿠키를 저장합니다.
 - `ask`
   - ChatGPT: 저장된 쿠키가 필요합니다.
-  - Gemini: 저장된 쿠키가 있으면 그 세션을 쓰고, 없으면 로컬 Chrome으로 signed-out 질문 경로를 시도합니다.
+  - Gemini: 저장된 쿠키가 있으면 그 세션을 쓰고, 없거나 쿠키 경로가 실패하면 로컬 Chrome으로 signed-out 질문 경로를 시도합니다.
+- `server`
+  - `/ask` 요청을 받아 JSON으로 응답합니다.
+  - 서버 요청 경로는 headless Lightpanda만 사용합니다.
 - 쿠키 기본 저장 경로는 `~/.pandaapi`입니다.
 
 ## 프로젝트 구조
@@ -129,6 +162,8 @@ pandaapi/
 ├── config.go
 ├── config_test.go
 ├── main_test.go
+├── server.go
+├── server_test.go
 ├── Makefile
 └── README.md
 ```
@@ -151,6 +186,9 @@ GOBIN=$PWD/.bin go install .
 - `./pandaapi ask --query "Hello" --provider chatgpt`
 - `./pandaapi ask --query "Hello" --provider gemini`
 - `PANDAAPI_COOKIE_DIR=$(mktemp -d) ./pandaapi ask --query "Say exactly: PONG" --provider gemini`
+- `./pandaapi server --addr 127.0.0.1:8080`
+- `curl http://127.0.0.1:8080/healthz`
+- `curl -X POST http://127.0.0.1:8080/ask -H 'Content-Type: application/json' -d '{"query":"Hello","provider":"chatgpt"}'`
 
 ## 제한 사항
 
@@ -159,6 +197,7 @@ GOBIN=$PWD/.bin go install .
 - Lightpanda CDP가 떠 있지 않으면 Lightpanda 경로 검증은 진행할 수 없습니다.
 - ChatGPT는 현재 확인된 환경에서 Lightpanda가 브라우저 검증 페이지에 걸릴 수 있습니다.
 - Gemini 로그인 없는 fallback은 현재 공개된 Gemini signed-out 웹 UI가 입력창을 계속 제공한다는 전제에 의존합니다.
+- 서버 모드는 headless Lightpanda 전용이므로, 서버 경로에서 Gemini 로그인 없는 Chrome fallback은 사용하지 않습니다.
 
 ## 개발 명령
 
@@ -173,4 +212,4 @@ GOBIN=$PWD/.bin go install .
 - `go install github.com/bssm-oss/pandaAPI@latest`로 설치할 수 있습니다.
 - 설치 후에도 런타임 요구사항은 그대로입니다.
   - ChatGPT/Gemini 웹 접근 가능
-  - Lightpanda 또는 로컬 Chrome/Chromium 사용 가능
+	- Lightpanda 또는 로컬 Chrome/Chromium 사용 가능

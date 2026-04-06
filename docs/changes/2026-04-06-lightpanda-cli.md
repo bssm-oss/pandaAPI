@@ -18,6 +18,10 @@ Create the initial CLI with reproducible local verification, cookie persistence,
 - Added explicit GitHub installation guidance for `go install` consumers.
 - Added focused tests for cookie persistence helpers and `ask` precondition handling.
 - Added a Gemini-only signed-out fallback path for `ask` when no cookie file is present.
+- Added a `pandaapi server` command with `/healthz` and `/ask` HTTP endpoints.
+- Made the server request path use headless Lightpanda only, without the Gemini Chrome fallback.
+- Fixed the Gemini prompt-submission failure under Lightpanda by replacing the unsupported chromedp input path.
+- Restored the visible local-browser auth flow and Gemini signed-out CLI fallback while keeping the server path headless-Lightpanda-only.
 
 ## Design Rationale
 
@@ -28,8 +32,9 @@ Create the initial CLI with reproducible local verification, cookie persistence,
 ## Impact Scope
 
 - New CLI commands: `auth`, `ask`
+- New CLI command: `server`
 - New runtime dependency on a reachable Lightpanda CDP endpoint for `ask`
-- New runtime dependency on local Chrome or Chromium for `auth`
+- Local Chrome/Chromium is still used for `auth` and Gemini signed-out CLI fallback.
 
 ## Verification Method
 
@@ -41,6 +46,10 @@ Create the initial CLI with reproducible local verification, cookie persistence,
 - Manual CLI smoke checks for help output and unauthenticated failure path
 - Lightpanda endpoint probe at `http://127.0.0.1:9222/json/version`
 - Signed-out Gemini request probe through local Chrome automation
+- `pandaapi server --addr 127.0.0.1:8080`
+- `curl http://127.0.0.1:8080/healthz`
+- `curl -X POST http://127.0.0.1:8080/ask ...`
+- `PANDAAPI_COOKIE_DIR=<tmp> ./pandaapi ask --query "Say exactly: PONG" --provider gemini`
 
 ## Remaining Limitations
 
@@ -49,7 +58,8 @@ Create the initial CLI with reproducible local verification, cookie persistence,
 - CI cannot complete real provider login or prompt flows.
 - The current local environment returned `connection refused` for the default Lightpanda endpoint, so authenticated `ask` verification remains blocked until Lightpanda is running.
 - After bringing Lightpanda up locally, ChatGPT still served a browser-verification page instead of the chat UI, so the current Lightpanda runtime cannot be claimed as verified for ChatGPT prompt submission.
-- Gemini loginless support is provider-specific and depends on the public signed-out Gemini web UI continuing to permit prompt submission.
+- `submit Gemini prompt: UnknownMethod (-31998)` was traced to Lightpanda incompatibility with the chromedp focus/send-keys path used for prompt submission.
+- The CLI now avoids that unsupported submission path and will fall back to the signed-out Gemini browser path when cookies are missing or unusable.
 
 ## Follow-Up Tasks
 
