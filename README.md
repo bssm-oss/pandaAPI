@@ -6,6 +6,7 @@
 
 - `pandaapi auth --provider chatgpt|gemini` opens a visible browser and saves authenticated cookies.
 - `pandaapi ask --query "..." [--provider chatgpt|gemini]` loads cookies, connects to Lightpanda, sends a prompt, waits for completion, and prints the answer.
+- If Gemini cookies are missing, `ask` falls back to a local Chrome runtime and attempts the signed-out Gemini web flow.
 - Cookies are stored on disk under `~/.pandaapi` by default.
 
 ## Requirements
@@ -50,6 +51,12 @@ Ask a question:
 ./pandaapi ask --query "Summarize this page" --provider gemini
 ```
 
+Try Gemini without logging in first:
+
+```bash
+PANDAAPI_COOKIE_DIR=$(mktemp -d) ./pandaapi ask --query "Say exactly: PONG" --provider gemini
+```
+
 If `--provider` is omitted for `ask`, `chatgpt` is used.
 
 ## Project Layout
@@ -78,7 +85,8 @@ pandaapi/
 ## Behavior Notes
 
 - `auth` uses a visible local browser session because Lightpanda is headless-oriented and login flows are more reliable in a standard browser.
-- `ask` expects valid cookies to exist already and returns `Run 'pandaapi auth' first` when they do not.
+- `ask` expects valid cookies for ChatGPT and for authenticated Gemini sessions.
+- If Gemini cookies are missing, `ask` falls back to a visible local Chrome runtime and uses the currently available signed-out Gemini web UI.
 - The CLI retries navigation and DOM interactions, uses fallback selectors, and waits for generation to finish by combining answer stability checks with stop-button disappearance.
 
 ## Verification
@@ -98,6 +106,7 @@ Manual smoke checks should also include:
 - `./pandaapi auth --provider gemini`
 - `./pandaapi ask --query "Hello" --provider chatgpt`
 - `./pandaapi ask --query "Hello" --provider gemini`
+- `PANDAAPI_COOKIE_DIR=$(mktemp -d) ./pandaapi ask --query "Say exactly: PONG" --provider gemini`
 
 ## Limitations
 
@@ -106,6 +115,7 @@ Manual smoke checks should also include:
 - End-to-end automation requires external services and a reachable Lightpanda CDP instance.
 - If `http://127.0.0.1:9222` is not serving CDP endpoints, `ask` cannot be verified end to end until Lightpanda is started.
 - In local verification, ChatGPT presented a browser-verification page under Lightpanda instead of the chat UI, so ChatGPT `ask` may require a different supported browser runtime even after authentication.
+- Gemini loginless support depends on the public signed-out Gemini web experience continuing to expose a usable prompt box to local Chrome automation.
 
 ## Development
 
