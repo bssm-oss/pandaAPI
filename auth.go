@@ -8,6 +8,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"golang.org/x/term"
 )
 
 func RunAuth(provider string) error {
@@ -34,12 +36,7 @@ func RunAuth(provider string) error {
 	}
 
 	fmt.Printf("Opened %s login in a visible browser. Complete login, then press Enter.\n", providerConfig.Name)
-	enterCh := make(chan struct{}, 1)
-	go func() {
-		reader := bufio.NewReader(os.Stdin)
-		_, _ = reader.ReadString('\n')
-		enterCh <- struct{}{}
-	}()
+	enterCh := startManualConfirmReader(os.Stdin)
 
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
@@ -56,18 +53,18 @@ func RunAuth(provider string) error {
 			if ready {
 				return SaveCookies(browserCtx, CookieFilePath(cfg, providerConfig.Name))
 			}
-		case <-enterCh:
+		case _, ok := <-enterCh:
+			if !ok {
+				enterCh = nil
+				continue
+			}
 			ready, err := ProviderReady(browserCtx, providerConfig.Name)
 			if err != nil {
 				return fmt.Errorf("check authentication state: %w", err)
 			}
 			if !ready {
 				fmt.Println("Login was not detected yet. Continue in the browser, then press Enter again.")
-				go func() {
-					reader := bufio.NewReader(os.Stdin)
-					_, _ = reader.ReadString('\n')
-					enterCh <- struct{}{}
-				}()
+				enterCh = startManualConfirmReader(os.Stdin)
 				continue
 			}
 			if err := SaveCookies(browserCtx, CookieFilePath(cfg, providerConfig.Name)); err != nil {
@@ -77,6 +74,25 @@ func RunAuth(provider string) error {
 			return nil
 		}
 	}
+}
+
+func startManualConfirmReader(input *os.File) <-chan struct{} {
+	ch := make(chan struct{}, 1)
+	if !term.IsTerminal(int(input.Fd())) {
+		close(ch)
+		return ch
+	}
+
+	go func() {
+		defer close(ch)
+		reader := bufio.NewReader(input)
+		if _, err := reader.ReadString('\n'); err != nil {
+			return
+		}
+		ch <- struct{}{}
+	}()
+
+	return ch
 }
 
 func ProviderReady(ctx context.Context, provider string) (bool, error) {
