@@ -2,11 +2,14 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/chromedp/chromedp"
 )
+
+var errGeminiTemporaryUnavailable = errors.New("gemini temporary unavailable")
 
 func geminiInputSelectors() []string {
 	return []string{
@@ -33,29 +36,58 @@ func geminiStopSelectors() []string {
 }
 
 func AskGemini(ctx context.Context, query string) (string, error) {
-	if err := FetchPageWithRetry(ctx, "https://gemini.google.com/", nil); err != nil {
-		return "", fmt.Errorf("open Gemini: %w", err)
-	}
-	inputSelector, err := WaitForAnySelector(ctx, geminiInputSelectors(), 30*time.Second)
-	if err != nil {
-		needsAuth, authErr := geminiNeedsAuth(ctx)
-		if authErr != nil {
-			return "", fmt.Errorf("find Gemini input: %w", err)
+	var answer string
+	err := Retry(ctx, 3, 2*time.Second, func(runCtx context.Context) error {
+		if err := FetchPageWithRetry(runCtx, "https://gemini.google.com/", nil); err != nil {
+			return fmt.Errorf("open Gemini: %w", err)
 		}
-		if needsAuth {
-			return "", fmt.Errorf("Run 'pandaapi auth' first")
+		temporary, tempErr := geminiTemporaryUnavailable(runCtx)
+		if tempErr == nil && temporary {
+			return errGeminiTemporaryUnavailable
 		}
-		return "", fmt.Errorf("find Gemini input: %w", err)
-	}
 
-	beforeState, err := geminiMessageState(ctx)
+		inputSelector, err := WaitForAnySelector(runCtx, geminiInputSelectors(), 30*time.Second)
+		if err != nil {
+			temporary, tempErr := geminiTemporaryUnavailable(runCtx)
+			if tempErr == nil && temporary {
+				return errGeminiTemporaryUnavailable
+			}
+			needsAuth, authErr := geminiNeedsAuth(runCtx)
+			if authErr != nil {
+				return fmt.Errorf("find Gemini input: %w", err)
+			}
+			if needsAuth {
+				return fmt.Errorf("Run 'pandaapi auth' first")
+			}
+			return fmt.Errorf("find Gemini input: %w", err)
+		}
+
+		beforeState, err := geminiMessageState(runCtx)
+		if err != nil {
+			return err
+		}
+		if err := SubmitPrompt(runCtx, inputSelector, query, geminiSubmitSelectors()); err != nil {
+			return fmt.Errorf("submit Gemini prompt: %w", err)
+		}
+		answer, err = waitForGeminiAnswer(runCtx, beforeState)
+		return err
+	})
+	if errors.Is(err, errGeminiTemporaryUnavailable) {
+		return "", fmt.Errorf("open Gemini: temporary server error, please retry")
+	}
 	if err != nil {
 		return "", err
 	}
-	if err := SubmitPrompt(ctx, inputSelector, query, geminiSubmitSelectors()); err != nil {
-		return "", fmt.Errorf("submit Gemini prompt: %w", err)
-	}
-	return waitForGeminiAnswer(ctx, beforeState)
+	return answer, nil
+}
+
+func geminiTemporaryUnavailable(ctx context.Context) (bool, error) {
+	expression := `(function() {
+		const title = (document.title || '').toLowerCase();
+		const body = (document.body?.innerText || '').toLowerCase();
+		return title.includes('502') || body.includes('502. that’s an error') || body.includes('please try again in 30 seconds');
+	})()`
+	return EvaluateBool(ctx, expression)
 }
 
 func geminiNeedsAuth(ctx context.Context) (bool, error) {

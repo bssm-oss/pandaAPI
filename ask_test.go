@@ -26,7 +26,7 @@ func TestDetermineAskRuntime(t *testing.T) {
 	}{
 		{name: "chatgpt without cookie", provider: ProviderChatGPT, cookieExists: false, headless: true, requireCookie: true},
 		{name: "gemini without cookie", provider: ProviderGemini, cookieExists: false, headless: false, requireCookie: false},
-		{name: "gemini with cookie", provider: ProviderGemini, cookieExists: true, headless: true, requireCookie: true},
+		{name: "gemini with cookie", provider: ProviderGemini, cookieExists: true, headless: false, requireCookie: false},
 	}
 
 	for _, tc := range tests {
@@ -75,7 +75,9 @@ func TestShouldFallbackGeminiSignedOut(t *testing.T) {
 	}{
 		{name: "auth required", err: errors.New("Run 'pandaapi auth' first"), want: true},
 		{name: "unknown method", err: errors.New("submit Gemini prompt: UnknownMethod (-31998)"), want: true},
-		{name: "other error", err: errors.New("wait for Gemini answer: context deadline exceeded"), want: false},
+		{name: "wait timeout", err: errors.New("wait for Gemini answer: context deadline exceeded"), want: true},
+		{name: "input missing", err: errors.New("find Gemini input: context deadline exceeded"), want: true},
+		{name: "other error", err: errors.New("open Gemini: some other failure"), want: false},
 	}
 
 	for _, tc := range tests {

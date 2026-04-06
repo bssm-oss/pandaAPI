@@ -14,7 +14,7 @@ type askRuntimePlan struct {
 }
 
 func determineAskRuntime(provider string, cookieExists bool) askRuntimePlan {
-	if provider == ProviderGemini && !cookieExists {
+	if provider == ProviderGemini {
 		return askRuntimePlan{headless: false, requireCookie: false}
 	}
 	return askRuntimePlan{headless: true, requireCookie: true}
@@ -25,7 +25,7 @@ func determineServerAskRuntime(_ string, _ bool) askRuntimePlan {
 }
 
 func RunAsk(query string, provider string) error {
-	answer, err := runAsk(query, provider, determineAskRuntime)
+	answer, err := runAsk(query, provider, determineAskRuntime, true)
 	if err != nil {
 		return err
 	}
@@ -35,10 +35,10 @@ func RunAsk(query string, provider string) error {
 }
 
 func RunServerAsk(query string, provider string) (string, error) {
-	return runAsk(query, provider, determineServerAskRuntime)
+	return runAsk(query, provider, determineServerAskRuntime, false)
 }
 
-func runAsk(query string, provider string, planner func(string, bool) askRuntimePlan) (string, error) {
+func runAsk(query string, provider string, planner func(string, bool) askRuntimePlan, allowGeminiFallback bool) (string, error) {
 	query = strings.TrimSpace(query)
 	if query == "" {
 		return "", errors.New("--query is required")
@@ -80,13 +80,15 @@ func runAsk(query string, provider string, planner func(string, bool) askRuntime
 
 	if plan.requireCookie {
 		if err := LoadCookies(browserCtx, cookieFile); err != nil {
-			if providerConfig.Name == ProviderGemini {
+			if providerConfig.Name == ProviderGemini && allowGeminiFallback {
 				return runAsk(query, provider, func(string, bool) askRuntimePlan {
 					return askRuntimePlan{headless: false, requireCookie: false}
-				})
+				}, false)
 			}
 			return "", fmt.Errorf("load cookies: %w", err)
 		}
+	} else if providerConfig.Name == ProviderGemini && cookieExists {
+		_ = LoadCookies(browserCtx, cookieFile)
 	}
 
 	var answer string
@@ -99,10 +101,10 @@ func runAsk(query string, provider string, planner func(string, bool) askRuntime
 		return "", fmt.Errorf("unsupported provider %q", providerConfig.Name)
 	}
 	if err != nil {
-		if providerConfig.Name == ProviderGemini && shouldFallbackGeminiSignedOut(err) && plan.requireCookie {
+		if providerConfig.Name == ProviderGemini && allowGeminiFallback && shouldFallbackGeminiSignedOut(err) && plan.requireCookie {
 			return runAsk(query, provider, func(string, bool) askRuntimePlan {
 				return askRuntimePlan{headless: false, requireCookie: false}
-			})
+			}, false)
 		}
 		return "", err
 	}
@@ -112,5 +114,8 @@ func runAsk(query string, provider string, planner func(string, bool) askRuntime
 
 func shouldFallbackGeminiSignedOut(err error) bool {
 	msg := err.Error()
-	return strings.Contains(msg, "Run 'pandaapi auth' first") || strings.Contains(msg, "submit Gemini prompt: UnknownMethod")
+	return strings.Contains(msg, "Run 'pandaapi auth' first") ||
+		strings.Contains(msg, "submit Gemini prompt: UnknownMethod") ||
+		strings.Contains(msg, "find Gemini input:") ||
+		strings.Contains(msg, "wait for Gemini answer:")
 }
