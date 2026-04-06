@@ -43,7 +43,6 @@ func AskGemini(ctx context.Context, query string) (string, error) {
 	if needsAuth {
 		return "", fmt.Errorf("Run 'pandaapi auth' first")
 	}
-
 	inputSelector, err := WaitForAnySelector(ctx, geminiInputSelectors(), 30*time.Second)
 	if err != nil {
 		return "", fmt.Errorf("find Gemini input: %w", err)
