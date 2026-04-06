@@ -74,3 +74,37 @@ func TestRunCLIAuthRequiresProvider(t *testing.T) {
 		t.Fatalf("expected provider error in stderr, got %q", stderr.String())
 	}
 }
+
+func TestParseServerArgsDefaultsAddr(t *testing.T) {
+	cfg, err := parseServerArgs(nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Addr != defaultServerAddr {
+		t.Fatalf("unexpected addr: %q", cfg.Addr)
+	}
+}
+
+func TestRunCLIPassesServerToHandler(t *testing.T) {
+	original := runServerFn
+	defer func() { runServerFn = original }()
+
+	called := false
+	runServerFn = func(addr string) error {
+		called = true
+		if addr != "127.0.0.1:9090" {
+			return errors.New("unexpected addr")
+		}
+		return nil
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	exitCode := runCLI([]string{"server", "--addr", "127.0.0.1:9090"}, &stdout, &stderr)
+	if exitCode != 0 {
+		t.Fatalf("expected exit 0, got %d, stderr=%q", exitCode, stderr.String())
+	}
+	if !called {
+		t.Fatal("expected server handler to be called")
+	}
+}

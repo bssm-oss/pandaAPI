@@ -10,8 +10,9 @@ import (
 )
 
 var (
-	runAuthFn = RunAuth
-	runAskFn  = RunAsk
+	runAuthFn   = RunAuth
+	runAskFn    = RunAsk
+	runServerFn = RunServer
 )
 
 func main() {
@@ -27,6 +28,18 @@ func runCLI(args []string, stdout, stderr io.Writer) int {
 	switch args[0] {
 	case "help", "-h", "--help":
 		writeUsage(stdout)
+		return 0
+	case "server":
+		cfg, err := parseServerArgs(args[1:])
+		if err != nil {
+			fmt.Fprintln(stderr, err)
+			writeServerUsage(stderr)
+			return 1
+		}
+		if err := runServerFn(cfg.Addr); err != nil {
+			fmt.Fprintln(stderr, err)
+			return 1
+		}
 		return 0
 	case "auth":
 		provider, err := parseAuthArgs(args[1:])
@@ -104,6 +117,7 @@ func writeUsage(w io.Writer) {
 	fmt.Fprintln(w, "Usage:")
 	fmt.Fprintln(w, "  pandaapi auth --provider chatgpt|gemini")
 	fmt.Fprintln(w, "  pandaapi ask --query \"question\" [--provider chatgpt|gemini]")
+	fmt.Fprintln(w, "  pandaapi server [--addr 127.0.0.1:8080]")
 }
 
 func writeAuthUsage(w io.Writer) {
@@ -112,4 +126,8 @@ func writeAuthUsage(w io.Writer) {
 
 func writeAskUsage(w io.Writer) {
 	fmt.Fprintln(w, "Usage: pandaapi ask --query \"question\" [--provider chatgpt|gemini]")
+}
+
+func writeServerUsage(w io.Writer) {
+	fmt.Fprintln(w, "Usage: pandaapi server [--addr 127.0.0.1:8080]")
 }
